@@ -47,7 +47,7 @@ And run:
 
     launchctl load /Library/LaunchAgents/com.bessarabov.mac2mqtt.plist
 
-(To stop you need to run `launchctl unload /Library/LaunchDaemons/com.bessarabov.mac2mqtt.plist`)
+(To stop you need to run `launchctl unload /Library/LaunchAgents/com.bessarabov.mac2mqtt.plist`)
 
 ## Home Assistant sample config
 

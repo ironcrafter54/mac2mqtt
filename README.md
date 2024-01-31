@@ -1,4 +1,4 @@
-# mac2mqtt (updated and maintained)
+# Mac2MQTT (updated and maintained)
 
 `mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT. 
 

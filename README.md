@@ -227,6 +227,10 @@ You can send the name of a shortcut to this topic. It will run this shortcut in 
 
 You can send `displaywake` to this topic. It will turn on the display. Sending some other value will do nothing.
 
+### PREFIX + `/command/screensaver`
+
+You can send `screensaver` to this topic. It will turn start your screensaver. Sending some other value will do nothing.
+
 ## Building
 
 To build this program yourself, follow these steps:

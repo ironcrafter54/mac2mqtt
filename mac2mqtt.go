@@ -159,6 +159,10 @@ func commandRunShortcut(shortcut string) {
 	runCommand("shortcuts", "run", shortcut)
 }
 
+func commandScreensaver() {
+	runCommand("open", "-a", "ScreenSaverEngine")
+}
+
 var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 	log.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
 }
@@ -264,6 +268,14 @@ func listen(client mqtt.Client, topic string) {
 
 			if string(msg.Payload()) == "shutdown" {
 				commandShutdown()
+			}
+
+		}
+
+		if msg.Topic() == getTopicPrefix()+"/command/screensaver" {
+
+			if string(msg.Payload()) == "screensaver" {
+				commandScreensaver()
 			}
 
 		}

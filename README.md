@@ -1,4 +1,4 @@
-# Mac2MQTT (updated and maintained)
+# Mac2MQTT (updated)
 
 ### This was a fun project, but I have now realized you should just use the Home Assistant SSH integration it's better in most ways, you can add controls more easily, it can execute any command, and is more reliable, and you don't need to run an additional piece of software.
 

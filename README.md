@@ -1,9 +1,6 @@
 # Mac2MQTT (updated)
 
-### This was a fun project, but I have now realized you should just use the Home Assistant SSH integration it's better in most ways, you can add controls more easily, it can execute any command, and is more reliable, and you don't need to run an additional piece of software.
-
 `mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT. 
-
 
 This repo is a fork of bessarabov/mac2mqtt, that fixes bugs and adds features.
 

@@ -1,6 +1,6 @@
 # Mac2MQTT (updated)
 
-`mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT. 
+`mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT.
 
 This repo is a fork of bessarabov/mac2mqtt, that fixes bugs and adds features.
 
@@ -38,7 +38,7 @@ Edit `mac2mqtt.yaml` (the sample file is in this repository), make binary execut
 ## Running in the background
 
 You need `mac2mqtt.yaml` and `mac2mqtt` to be placed in the directory `/Users/USERNAME/mac2mqtt/`,
-then you need edit the file `com.bessarabov.mac2mqtt.plist` 
+then you need edit the file `com.bessarabov.mac2mqtt.plist`
 and replace `USERNAME` with your username. Then put the file in `/Library/LaunchAgents/`.
 
 
@@ -80,17 +80,16 @@ script:
           topic: "mac2mqtt/bessarabov-osx/command/displaysleep"
           payload: "displaysleep"
 
-sensor:
-  - platform: mqtt
-    name: air2_alive
-    icon: mdi:laptop
-    state_topic: "mac2mqtt/bessarabov-osx/status/alive"
+mqtt:
+  sensor:
+    - name: air2_alive
+      icon: mdi:laptop
+      state_topic: "mac2mqtt/bessarabov-osx/status/alive"
 
-  - platform: mqtt
-    name: "air2_battery"
-    icon: mdi:battery-high
-    unit_of_measurement: "%"
-    state_topic: "mac2mqtt/bessarabov-osx/status/battery"
+    - name: "air2_battery"
+      icon: mdi:battery-high
+      unit_of_measurement: "%"
+      state_topic: "mac2mqtt/bessarabov-osx/status/battery"
 
 switch:
   - platform: mqtt

@@ -23,18 +23,19 @@ type config struct {
 	Port     string `yaml:"mqtt_port"`
 	User     string `yaml:"mqtt_user"`
 	Password string `yaml:"mqtt_password"`
+	Hostname string `yaml:"hostname"`
 }
 
 func (c *config) getConfig() *config {
 
 	configContent, err := os.ReadFile("mac2mqtt.yaml")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("No config file provided")
 	}
 
 	err = yaml.Unmarshal(configContent, c)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("No data in config file")
 	}
 
 	if c.Ip == "" {
@@ -51,6 +52,9 @@ func (c *config) getConfig() *config {
 
 	if c.Password == "" {
 		log.Fatal("Must specify mqtt_password in mac2mqtt.yaml")
+	}
+	if c.Hostname == "" {
+		log.Fatal("must specify a hostname in mac2mqtt.yaml")
 	}
 
 	return c
@@ -331,9 +335,8 @@ func main() {
 	var c config
 	c.getConfig()
 
+	hostname = c.Hostname
 	var wg sync.WaitGroup
-
-	hostname = getHostname()
 	mqttClient := getMQTTClient(c.Ip, c.Port, c.User, c.Password)
 
 	volumeTicker := time.NewTicker(60 * time.Second)

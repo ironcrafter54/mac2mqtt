@@ -211,7 +211,7 @@ func commandDisplayWake() {
 }
 
 func commandKeepAwake() {
-	cmd := "/usr/bin/nohup /usr/bin/caffeinate -d &"
+	cmd := "/usr/bin/caffeinate -d &"
 	err := exec.Command("/bin/sh", "-c", cmd).Start()
 	if err != nil {
 		log.Fatal(err)

@@ -1,0 +1,9 @@
+{
+    "gopls": {
+         "build.buildFlags": [
+             "-tags=cse"
+         ]
+     },
+     "go.useLanguageServer": true,
+     "go.buildOnSave": "off",
+ }

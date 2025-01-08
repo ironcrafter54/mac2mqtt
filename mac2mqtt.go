@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/json"
 
 	"gopkg.in/yaml.v2"
 
@@ -24,6 +25,7 @@ type config struct {
 	User     string `yaml:"mqtt_user"`
 	Password string `yaml:"mqtt_password"`
 	Hostname string `yaml:"hostname"`
+	DiscoveryPrefix string `yaml:"discovery_prefix"`
 }
 
 func (c *config) getConfig() *config {
@@ -54,12 +56,47 @@ func (c *config) getConfig() *config {
 		log.Fatal("Must specify mqtt_password in mac2mqtt.yaml")
 	}
 	if c.Hostname == "" {
-		log.Fatal("must specify a hostname in mac2mqtt.yaml")
+		c.Hostname = getHostname()
 	}
-
+	if c.DiscoveryPrefix == "" {
+		c.DiscoveryPrefix = "homeassistant"
+	}
 	return c
 }
 
+func getSerialnumber() string {
+
+	cmd := "/usr/sbin/ioreg -l | /usr/bin/grep IOPlatformSerialNumber"
+	output, err := exec.Command("/bin/sh", "-c", cmd).Output()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	outputStr := string(output)
+	last := output[strings.LastIndex(outputStr, " ")+1:]
+	lastStr := string(last)
+	// remove all symbols, but [a-zA-Z0-9_-]
+	reg, err := regexp.Compile("[^a-zA-Z0-9_-]+")
+	if err != nil {
+		log.Fatal(err)
+	}
+	lastStr = reg.ReplaceAllString(lastStr, "")
+
+	return lastStr
+}
+
+func getModel() string {
+
+	cmd := "/usr/sbin/system_profiler SPHardwareDataType |/usr/bin/grep Chip | /usr/bin/sed 's/\\(^.*: \\)\\(.*\\)/\\2/'"
+	output, err := exec.Command("/bin/sh", "-c", cmd).Output()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	outputStr := string(output)
+	outputStr = strings.TrimSuffix(outputStr, "\n")
+	return outputStr
+}
 func getHostname() string {
 
 	hostname, err := os.Hostname()
@@ -93,6 +130,20 @@ func getCommandOutput(name string, arg ...string) string {
 	stdoutStr = strings.TrimSuffix(stdoutStr, "\n")
 
 	return stdoutStr
+}
+
+func getCaffeinateStatus() bool {
+	cmd := "/bin/ps ax | /usr/bin/grep caffeinate | /usr/bin/grep -v grep"
+	output, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	if err != nil {
+		//log.Fatal(err)
+	}
+	stdoutStr := string(output)
+	stdoutStr = strings.TrimSuffix(stdoutStr, "\n")
+	if stdoutStr == "" {
+		return false
+	}
+	return true
 }
 
 func getMuteStatus() bool {
@@ -159,6 +210,22 @@ func commandDisplayWake() {
 	runCommand("/usr/bin/caffeinate", "-u", "-t", "1")
 }
 
+func commandKeepAwake() {
+	cmd := "/usr/bin/nohup /usr/bin/caffeinate -d &"
+	err := exec.Command("/bin/sh", "-c", cmd).Start()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func commandAllowSleep() {
+	cmd := "/bin/ps ax | /usr/bin/grep caffeinate | /usr/bin/grep -v grep | /usr/bin/awk '{print \"kill \"$1}'|sh"
+	_, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func commandRunShortcut(shortcut string) {
 	runCommand("shortcuts", "run", shortcut)
 }
@@ -174,10 +241,10 @@ var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Me
 var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 	log.Println("Connected to MQTT")
 
-	token := client.Publish(getTopicPrefix()+"/status/alive", 0, true, "true")
+	token := client.Publish(getTopicPrefix()+"/status/alive", 0, true, "online")
 	token.Wait()
 
-	log.Println("Sending 'true' to topic: " + getTopicPrefix() + "/status/alive")
+	log.Println("Sending 'online' to topic: " + getTopicPrefix() + "/status/alive")
 
 	listen(client, getTopicPrefix()+"/command/#")
 }
@@ -195,7 +262,7 @@ func getMQTTClient(ip, port, user, password string) mqtt.Client {
 	opts.OnConnect = connectHandler
 	opts.OnConnectionLost = connectLostHandler
 
-	opts.SetWill(getTopicPrefix()+"/status/alive", "false", 0, true)
+	opts.SetWill(getTopicPrefix()+"/status/alive", "offline", 0, true)
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
@@ -288,6 +355,20 @@ func listen(client mqtt.Client, topic string) {
 			commandRunShortcut(string(msg.Payload()))
 		}
 
+		if msg.Topic() == getTopicPrefix()+"/command/keepawake" {
+			b, err := strconv.ParseBool(string(msg.Payload()))
+			if err == nil {
+				if b {
+					commandKeepAwake()
+				} else {
+					commandAllowSleep()
+				}
+				updateCaffeinateStatus(client)
+			} else {
+				log.Println("Incorrect value")
+			}
+		}
+
 	})
 
 	token.Wait()
@@ -328,12 +409,145 @@ func updateBattery(client mqtt.Client) {
 	token.Wait()
 }
 
+func updateCaffeinateStatus(client mqtt.Client) {
+	token := client.Publish(getTopicPrefix()+"/status/caffeinate", 0, false, strconv.FormatBool(getCaffeinateStatus()))
+	token.Wait()
+}
+
+func setDevice(client mqtt.Client, DiscoveryPrefix string) {
+
+	keepawake := map[string]interface{}{
+		"p": "switch",
+		"name": "Keep Awake",
+		"unique_id": hostname + "_keepwake",
+		"command_topic": getTopicPrefix()+"/command/keepawake",
+		"payload_on": "true",
+		"payload_off": "false",
+		"state_topic": getTopicPrefix()+"/status/caffeinate",
+		"icon": "mdi:coffee",
+	}
+
+	displaywake := map[string]interface{}{
+		"p": "button",
+		"name": "Display Wake",
+		"unique_id": hostname + "_displaywake",
+		"command_topic": getTopicPrefix()+"/command/displaywake",
+		"payload_press": "displaywake",
+		"icon": "mdi:monitor",
+	}
+
+	displaysleep := map[string]interface{}{
+		"p": "button",
+		"name": "Display Sleep",
+		"unique_id": hostname + "_displaywake",
+		"command_topic": getTopicPrefix()+"/command/displaysleep",
+		"payload_press": "displaysleep",
+		"icon": "mdi:monitor-off",
+	}
+
+	screensaver := map[string]interface{}{
+		"p": "button",
+		"name": "Screensaver",
+		"unique_id": hostname + "_screensaver",
+		"command_topic": getTopicPrefix()+"/command/screensaver",
+		"payload_press": "screensaver",
+		"icon": "mdi:monitor-star",
+	}
+
+	sleep := map[string]interface{}{
+		"p": "button",
+		"name": "Sleep",
+		"unique_id": hostname + "_sleep",
+		"command_topic": getTopicPrefix()+"/command/sleep",
+		"payload_press": "sleep",
+		"icon": "mdi:sleep",
+	}
+
+	shutdown := map[string]interface{}{
+		"p": "button",
+		"name": "Shutdown",
+		"unique_id": hostname + "_shutdown",
+		"command_topic": getTopicPrefix()+"/command/shutdown",
+		"payload_press": "shutdown",
+		"enabled_by_default": false,
+		"icon": "mdi:power",
+	}
+	mute := map[string]interface{}{
+		"p": "switch",
+		"name": "Mute",
+		"unique_id": hostname + "_mute",
+		"command_topic": getTopicPrefix()+"/command/mute",
+		"payload_on": "true",
+		"payload_off": "false",
+		"state_topic": getTopicPrefix()+"/status/mute",
+		"icon": "mdi:volume-mute",
+	}
+
+	volume := map[string]interface{}{
+		"p": "number",
+		"name": "Volume",
+		"unique_id": hostname + "_volume",
+		"command_topic": getTopicPrefix()+"/command/volume",
+		"state_topic": getTopicPrefix()+"/status/volume",
+		"min_value": 0,
+		"max_value": 100,
+		"step": 1,
+		"mode": "slider",
+		"icon": "mdi:volume-high",
+	}
+
+	battery := map[string]interface{}{
+		"p": "sensor",
+		"name": "Battery",
+		"unique_id": hostname + "_battery",
+		"state_topic": getTopicPrefix()+"/status/battery",
+		"enabled_by_default": false,
+		"unit_of_measurement": "%",
+		"device_class": "battery",
+	}
+
+	components := map[string]interface{}{
+		"sleep": sleep,
+		"shutdown": shutdown,
+		"volume": volume,
+		"mute": mute,
+		"displaywake": displaywake,
+		"displaysleep": displaysleep,
+		"screensaver": screensaver,
+		"battery": battery,
+		"keepawake": keepawake,
+	}
+
+	origin := map[string]interface{}{
+		"name": "mac2mqtt",
+	}
+
+	device := map[string]interface{}{
+		"ids": getSerialnumber(),
+		"name": hostname,
+		"mf": "Apple",
+		"mdl": getModel(),
+	}
+
+	object := map[string]interface{}{
+		"dev": device,
+		"o": origin,
+		"cmps": components,
+		"availability_topic": getTopicPrefix()+"/status/alive",
+		"qos": 2,
+	}
+	objectJSON, _ := json.Marshal(object)
+
+	token := client.Publish(DiscoveryPrefix + "/device" + "/" + hostname + "/config", 0, true, objectJSON)
+	token.Wait()
+}
+
 func main() {
 
 	log.Println("Started")
-
 	var c config
 	c.getConfig()
+	log.Println("Discovery Prefix: " + c.DiscoveryPrefix)
 
 	hostname = c.Hostname
 	var wg sync.WaitGroup
@@ -341,6 +555,11 @@ func main() {
 
 	volumeTicker := time.NewTicker(60 * time.Second)
 	batteryTicker := time.NewTicker(60 * time.Second)
+	awakeTicker := time.NewTicker(60 * time.Second)
+	setDevice(mqttClient, c.DiscoveryPrefix)
+	updateVolume(mqttClient)
+	updateMute(mqttClient)
+	updateCaffeinateStatus(mqttClient)
 
 	wg.Add(1)
 	go func() {
@@ -352,6 +571,8 @@ func main() {
 
 			case _ = <-batteryTicker.C:
 				updateBattery(mqttClient)
+			case _ = <-awakeTicker.C:
+				updateCaffeinateStatus(mqttClient)
 			}
 		}
 	}()

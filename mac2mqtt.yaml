@@ -1,7 +1,8 @@
 # your mqtt brocker ip no need for parethesis or anything like that
-mqtt_ip:
+mqtt_ip: mqtt_server
 mqtt_port: 1883
 mqtt_user: hass
 mqtt_password: password
 # the name you want to show up in home assistant
-hostname: Macbook-air
+hostname: Macbookair #optional if ommitted the hostname of the machine will be used
+discovery_prefix: homeassistant

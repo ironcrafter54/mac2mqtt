@@ -2,7 +2,7 @@
 
 `mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT.
 
-This repo is a fork of bessarabov/mac2mqtt, that fixes bugs and adds features.
+This repo is a fork of bessarabov/mac2mqtt, that add MQTT Autodiscovery and a KeepAwake function for the mac.
 
 It publishes to MQTT:
 
@@ -38,15 +38,15 @@ Edit `mac2mqtt.yaml` (the sample file is in this repository), make binary execut
 ## Running in the background
 
 You need `mac2mqtt.yaml` and `mac2mqtt` to be placed in the directory `/Users/USERNAME/mac2mqtt/`,
-then you need edit the file `com.bessarabov.mac2mqtt.plist`
+then you need edit the file `com.hagak.mac2mqtt.plist`
 and replace `USERNAME` with your username. Then put the file in `/Library/LaunchAgents/`.
 
 
 And run:
 
-    launchctl load /Library/LaunchAgents/com.bessarabov.mac2mqtt.plist
+    launchctl load /Library/LaunchAgents/com.hagak.mac2mqtt.plist
 
-(To stop you need to run `launchctl unload /Library/LaunchAgents/com.bessarabov.mac2mqtt.plist`)
+(To stop you need to run `launchctl unload /Library/LaunchAgents/com.hagak.mac2mqtt.plist`)
 
 ## Home Assistant sample config
 

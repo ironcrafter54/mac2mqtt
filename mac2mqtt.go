@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -30,7 +32,7 @@ type config struct {
 
 func (c *config) getConfig() *config {
 
-	configContent, err := os.ReadFile("mac2mqtt.yaml")
+	configContent, err := os.ReadFile("/Users/jeff/mac2mqtt/mac2mqtt.yaml")
 	if err != nil {
 		log.Fatal("No config file provided")
 	}
@@ -121,12 +123,12 @@ func getHostname() string {
 
 func getCommandOutput(name string, arg ...string) string {
 	cmd := exec.Command(name, arg...)
-
 	stdout, err := cmd.Output()
 	if err != nil {
+		log.Println("error: " + err.Error())
+		log.Println("output: " + string(stdout))
 		log.Fatal(err)
 	}
-
 	stdoutStr := string(stdout)
 	stdoutStr = strings.TrimSuffix(stdoutStr, "\n")
 
@@ -145,22 +147,52 @@ func getCaffeinateStatus() bool {
 }
 
 func getMuteStatus() bool {
+	log.Println("Getting mute status")
 	output := getCommandOutput("/usr/bin/osascript", "-e", "output muted of (get volume settings)")
-
 	b, err := strconv.ParseBool(output)
 	if err != nil {
 	}
-
+	if output == "missing value" {
+		resp, err := http.Get(`http://localhost:55777/get?name=DELL%20U3417W&mute`)
+		if err != nil {
+			log.Println("Error getting mute status: " + err.Error())
+		}
+		defer resp.Body.Close()
+		output, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Println("Error getting mute status body: " + err.Error())
+		}
+		output = []byte(strings.TrimSuffix(string(output), "\n"))
+		mute := string(output)
+		log.Println("Mute Output: " + mute)
+		b = mute == "on"
+	}
 	return b
 }
 
 func getCurrentVolume() int {
+	log.Println("Getting volume status")
 	output := getCommandOutput("/usr/bin/osascript", "-e", "output volume of (get volume settings)")
-
+	output = strings.TrimSuffix(output, "\n")
 	i, err := strconv.Atoi(output)
 	if err != nil {
+		resp, err := http.Get(`http://localhost:55777/get?name=DELL%20U3417W&volume`)
+		if err != nil {
+			log.Println("Error getting volume status: " + err.Error())
+		}
+		defer resp.Body.Close()
+		output, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Println("Error getting volume status body: " + err.Error())
+		}
+		output = []byte(strings.TrimSuffix(string(output), "\n"))
+		outputStr := string(output)
+		log.Println("Vol Output: " + outputStr)
+		f, err := strconv.ParseFloat(outputStr, 64)
+		if err != nil {
+		}
+		i = int(f * 100)
 	}
-
 	return i
 }
 
@@ -175,13 +207,31 @@ func runCommand(name string, arg ...string) {
 
 // from 0 to 100
 func setVolume(i int) {
-	runCommand("/usr/bin/osascript", "-e", "set volume output volume "+strconv.Itoa(i))
+	//Test first if we can control the mute if not use betterdisplaycli
+	test := getCommandOutput("/usr/bin/osascript", "-e", "output volume of (get volume settings)")
+	if test == "missing value" {
+		volumef := float64(i) / 100
+		http.Get(`http://localhost:55777/set?name=DELL%20U3417W&volume=` + fmt.Sprintf("%f", volumef))
+	} else {
+		runCommand("/usr/bin/osascript", "-e", "set volume output volume "+strconv.Itoa(i))
+	}
 }
 
 // true - turn mute on
 // false - turn mute off
 func setMute(b bool) {
-	runCommand("/usr/bin/osascript", "-e", "set volume output muted "+strconv.FormatBool(b))
+	//Test first if we can control the mute if not use betterdisplaycli
+	test := getCommandOutput("/usr/bin/osascript", "-e", "output volume of (get volume settings)")
+	if test == "missing value" {
+		state := "off"
+		if b {
+			state = "on"
+		}
+		http.Get(`http://localhost:55777/set?name=DELL%20U3417W&mute=` + state)
+	} else {
+		runCommand("/usr/bin/osascript", "-e", "set volume output muted "+strconv.FormatBool(b))
+	}
+
 }
 
 func commandSleep() {
@@ -232,9 +282,10 @@ func commandScreensaver() {
 	runCommand("open", "-a", "ScreenSaverEngine")
 }
 
-// var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-// 	log.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
-// }
+var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	log.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
+	listen(client, msg)
+}
 
 var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 	log.Println("Connected to MQTT")
@@ -243,8 +294,8 @@ var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
 	token.Wait()
 
 	log.Println("Sending 'online' to topic: " + getTopicPrefix() + "/status/alive")
+	sub(client, getTopicPrefix()+"/command/#")
 
-	listen(client, getTopicPrefix()+"/command/#")
 }
 
 var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
@@ -259,6 +310,7 @@ func getMQTTClient(ip, port, user, password string) mqtt.Client {
 	opts.SetPassword(password)
 	opts.OnConnect = connectHandler
 	opts.OnConnectionLost = connectLostHandler
+	opts.SetDefaultPublishHandler(messagePubHandler)
 
 	opts.SetWill(getTopicPrefix()+"/status/alive", "offline", 0, true)
 
@@ -274,104 +326,100 @@ func getTopicPrefix() string {
 	return "mac2mqtt/" + hostname
 }
 
-func listen(client mqtt.Client, topic string) {
-
-	token := client.Subscribe(topic, 0, func(client mqtt.Client, msg mqtt.Message) {
-
-		if msg.Topic() == getTopicPrefix()+"/command/volume" {
-
-			i, err := strconv.Atoi(string(msg.Payload()))
-			if err == nil && i >= 0 && i <= 100 {
-
-				setVolume(i)
-
-				updateVolume(client)
-				updateMute(client)
-
-			} else {
-				log.Println("Incorrect value")
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/mute" {
-
-			b, err := strconv.ParseBool(string(msg.Payload()))
-			if err == nil {
-				setMute(b)
-
-				updateVolume(client)
-				updateMute(client)
-
-			} else {
-				log.Println("Incorrect value")
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/sleep" {
-
-			if string(msg.Payload()) == "sleep" {
-				commandSleep()
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/displaysleep" {
-
-			if string(msg.Payload()) == "displaysleep" {
-				commandDisplaySleep()
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/displaywake" {
-
-			if string(msg.Payload()) == "displaywake" {
-				commandDisplayWake()
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/shutdown" {
-
-			if string(msg.Payload()) == "shutdown" {
-				commandShutdown()
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/screensaver" {
-
-			if string(msg.Payload()) == "screensaver" {
-				commandScreensaver()
-			}
-
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/runshortcut" {
-			commandRunShortcut(string(msg.Payload()))
-		}
-
-		if msg.Topic() == getTopicPrefix()+"/command/keepawake" {
-			b, err := strconv.ParseBool(string(msg.Payload()))
-			if err == nil {
-				if b {
-					commandKeepAwake()
-				} else {
-					commandAllowSleep()
-				}
-				updateCaffeinateStatus(client)
-			} else {
-				log.Println("Incorrect value")
-			}
-		}
-
-	})
-
+func sub(client mqtt.Client, topic string) {
+	token := client.Subscribe(topic, 0, nil)
 	token.Wait()
-	if token.Error() != nil {
-		log.Printf("Token error: %s\n", token.Error())
+	log.Printf("Subscribed to topic: %s\n", topic)
+}
+
+func listen(client mqtt.Client, msg mqtt.Message) {
+	if msg.Topic() == getTopicPrefix()+"/command/volume" {
+
+		i, err := strconv.Atoi(string(msg.Payload()))
+		if err == nil && i >= 0 && i <= 100 {
+
+			setVolume(i)
+
+			updateVolume(client)
+			updateMute(client)
+
+		} else {
+			log.Println("Incorrect value")
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/mute" {
+
+		b, err := strconv.ParseBool(string(msg.Payload()))
+		if err == nil {
+			setMute(b)
+
+			updateVolume(client)
+			updateMute(client)
+
+		} else {
+			log.Println("Incorrect value")
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/sleep" {
+
+		if string(msg.Payload()) == "sleep" {
+			commandSleep()
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/displaysleep" {
+
+		if string(msg.Payload()) == "displaysleep" {
+			commandDisplaySleep()
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/displaywake" {
+
+		if string(msg.Payload()) == "displaywake" {
+			commandDisplayWake()
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/shutdown" {
+
+		if string(msg.Payload()) == "shutdown" {
+			commandShutdown()
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/screensaver" {
+
+		if string(msg.Payload()) == "screensaver" {
+			commandScreensaver()
+		}
+
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/runshortcut" {
+		commandRunShortcut(string(msg.Payload()))
+	}
+
+	if msg.Topic() == getTopicPrefix()+"/command/keepawake" {
+		b, err := strconv.ParseBool(string(msg.Payload()))
+		if err == nil {
+			if b {
+				commandKeepAwake()
+			} else {
+				commandAllowSleep()
+			}
+			updateCaffeinateStatus(client)
+		} else {
+			log.Println("Incorrect value")
+		}
 	}
 }
 

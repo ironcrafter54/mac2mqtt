@@ -153,7 +153,15 @@ func getMuteStatus() bool {
 	if err != nil {
 	}
 	if output == "missing value" {
-		resp, err := http.Get(`http://localhost:55777/get?name=DELL%20U3417W&mute`)
+		currentsource := getCommandOutput("/opt/homebrew/bin/switchaudiosource", "-c")
+		resp := &http.Response{}
+		err := error(nil)
+
+		if currentsource == "DELL U3417W" {
+			resp, err = http.Get(`http://localhost:55777/get?name=DELL%20U3417W&mute`)
+		} else {
+			resp, err = http.Get(`http://localhost:55777/get?name=DELL%20U3824DW&mute`)
+		}
 		if err != nil {
 			log.Println("Error getting mute status: " + err.Error())
 		}
@@ -176,7 +184,14 @@ func getCurrentVolume() int {
 	output = strings.TrimSuffix(output, "\n")
 	i, err := strconv.Atoi(output)
 	if err != nil {
-		resp, err := http.Get(`http://localhost:55777/get?name=DELL%20U3417W&volume`)
+		currentsource := getCommandOutput("/opt/homebrew/bin/switchaudiosource", "-c")
+		resp := &http.Response{}
+		err := error(nil)
+		if currentsource == "DELL U3417W" {
+			resp, err = http.Get(`http://localhost:55777/get?name=DELL%20U3417W&volume`)
+		} else {
+			resp, err = http.Get(`http://localhost:55777/get?name=DELL%20U3824DW&volume`)
+		}
 		if err != nil {
 			log.Println("Error getting volume status: " + err.Error())
 		}
@@ -211,7 +226,12 @@ func setVolume(i int) {
 	test := getCommandOutput("/usr/bin/osascript", "-e", "output volume of (get volume settings)")
 	if test == "missing value" {
 		volumef := float64(i) / 100
-		http.Get(`http://localhost:55777/set?name=DELL%20U3417W&volume=` + fmt.Sprintf("%f", volumef))
+		currentsource := getCommandOutput("/opt/homebrew/bin/switchaudiosource", "-c")
+		if currentsource == "DELL U3417W" {
+			http.Get(`http://localhost:55777/set?name=DELL%20U3417W&volume=` + fmt.Sprintf("%f", volumef))
+		} else {
+			http.Get(`http://localhost:55777/set?name=DELL%20U3824DW&volume=` + fmt.Sprintf("%f", volumef))
+		}
 	} else {
 		runCommand("/usr/bin/osascript", "-e", "set volume output volume "+strconv.Itoa(i))
 	}
@@ -227,7 +247,14 @@ func setMute(b bool) {
 		if b {
 			state = "on"
 		}
-		http.Get(`http://localhost:55777/set?name=DELL%20U3417W&mute=` + state)
+		currentsource := getCommandOutput("/opt/homebrew/bin/switchaudiosource", "-c")
+		if currentsource == "DELL U3417W" {
+			http.Get(`http://localhost:55777/set?name=DELL%20U3417W&mute=` + state)
+		} else if currentsource == "DELL U3824DW" {
+			http.Get(`http://localhost:55777/set?name=DELL%20U3824DW&mute=` + state)
+		} else {
+			return
+		}
 	} else {
 		runCommand("/usr/bin/osascript", "-e", "set volume output muted "+strconv.FormatBool(b))
 	}

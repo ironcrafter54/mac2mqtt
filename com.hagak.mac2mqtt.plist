@@ -12,5 +12,9 @@
         <true/>
         <key>KeepAlive</key>
         <true/>
+        <key>StandardErrorPath</key>
+        <string>/tmp/mac2mqtt.job.err</string>
+        <key>StandardOutPath</key>
+        <string>/tmp/mac2mqtt.job.out</string>
     </dict>
 </plist>

@@ -332,7 +332,7 @@ var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err
 func getMQTTClient(ip, port, user, password string) mqtt.Client {
 
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%s", ip, port))
+	opts.AddBroker(fmt.Sprintf("ssl://%s:%s", ip, port))
 	opts.SetUsername(user)
 	opts.SetPassword(password)
 	opts.OnConnect = connectHandler

@@ -1,6 +1,6 @@
 # Mac2MQTT (updated)
 
-### FYI this project is not abandoned and is accepting pull requests, if you made this app better feel free to submit a PR and I'll merge it.
+FYI this project is not abandoned and is accepting pull requests, if you made this app better feel free to submit a PR and I'll merge it.
 
 `mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT.
 

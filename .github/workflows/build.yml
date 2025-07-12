@@ -1,0 +1,96 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  GO_VERSION: '1.21'
+  CGO_ENABLED: 1
+
+jobs:
+  test:
+    name: Test
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build for testing
+        run: go build -o mac2mqtt mac2mqtt.go
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: mac2mqtt-test
+          path: mac2mqtt
+          retention-days: 7
+
+  build-matrix:
+    name: Build for ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        target: [darwin-amd64, darwin-arm64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -ldflags="-s -w" -o mac2mqtt-${{ matrix.target }} mac2mqtt.go
+          chmod +x mac2mqtt-${{ matrix.target }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: mac2mqtt-${{ matrix.target }}
+          path: mac2mqtt-${{ matrix.target }}
+          retention-days: 7 

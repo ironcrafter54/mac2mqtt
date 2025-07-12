@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.hagak.mac2mqtt</string>
+        <key>Program</key>
+        <string>/Users/USERNAME/mac2mqtt/mac2mqtt</string>
+        <key>WorkingDirectory</key>
+        <string>/Users/USERNAME/mac2mqtt/</string>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+        <key>StandardErrorPath</key>
+        <string>/tmp/mac2mqtt.job.err</string>
+        <key>StandardOutPath</key>
+        <string>/tmp/mac2mqtt.job.out</string>
+        <key>EnvironmentVariables</key>
+        <dict>
+            <key>PATH</key>
+            <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+            <key>HOME</key>
+            <string>/Users/USERNAME</string>
+            <key>USER</key>
+            <string>USERNAME</string>
+            <key>LOGNAME</key>
+            <string>USERNAME</string>
+            <key>SHELL</key>
+            <string>/bin/zsh</string>
+        </dict>
+        <key>ProcessType</key>
+        <string>Background</string>
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+    </dict>
+</plist>

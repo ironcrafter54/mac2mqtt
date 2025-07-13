@@ -1,147 +1,138 @@
 # Mac2MQTT Makefile
-# Provides convenient targets for building and managing mac2mqtt
 
-.PHONY: help build install uninstall clean status logs configure test
+# Variables
+BINARY_NAME=mac2mqtt
+VERSION=$(shell git describe --tags --always --dirty)
+BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
+LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w"
 
-# Default target
-help:
-	@echo "Mac2MQTT Management Commands:"
-	@echo ""
-	@echo "Build:"
-	@echo "  make build        - Build the mac2mqtt binary"
-	@echo "  make clean        - Clean build artifacts"
-	@echo ""
-	@echo "Installation:"
-	@echo "  make install      - Run the installer script"
-	@echo "  make uninstall    - Run the uninstaller script"
-	@echo ""
-	@echo "Management:"
-	@echo "  make status       - Check service status"
-	@echo "  make logs         - Show recent logs"
-	@echo "  make configure    - Reconfigure MQTT settings"
-	@echo "  make test         - Test MQTT connection"
-	@echo ""
-	@echo "Quick start:"
-	@echo "  make build install  - Build and install in one step"
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOCLEAN=$(GOCMD) clean
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
 
-# Build the binary
-build:
-	@echo "Building mac2mqtt..."
-	go mod tidy
-	go build -o mac2mqtt mac2mqtt.go
-	chmod +x mac2mqtt
-	@echo "Build complete!"
+# Build flags
+CGO_ENABLED=1
 
-# Clean build artifacts
-clean:
+.PHONY: all build clean test deps help build-all build-amd64 build-arm64 install uninstall status
+
+all: clean deps test build
+
+help: ## Show this help message
+	@echo 'Usage: make [target]'
+	@echo ''
+	@echo 'Targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+build: ## Build for current architecture
+	@echo "Building $(BINARY_NAME) for current architecture..."
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME) mac2mqtt.go
+	@echo "Build complete: $(BINARY_NAME)"
+
+build-all: build-amd64 build-arm64 ## Build for both Intel and ARM architectures
+
+build-amd64: ## Build for Intel Mac (amd64)
+	@echo "Building $(BINARY_NAME) for Intel Mac (amd64)..."
+	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-darwin-amd64 mac2mqtt.go
+	chmod +x $(BINARY_NAME)-darwin-amd64
+	@echo "Build complete: $(BINARY_NAME)-darwin-amd64"
+
+build-arm64: ## Build for Apple Silicon Mac (arm64)
+	@echo "Building $(BINARY_NAME) for Apple Silicon Mac (arm64)..."
+	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME)-darwin-arm64 mac2mqtt.go
+	chmod +x $(BINARY_NAME)-darwin-arm64
+	@echo "Build complete: $(BINARY_NAME)-darwin-arm64"
+
+clean: ## Clean build artifacts
 	@echo "Cleaning build artifacts..."
-	rm -f mac2mqtt
-	@echo "Clean complete!"
+	$(GOCLEAN)
+	rm -f $(BINARY_NAME) $(BINARY_NAME)-darwin-*
+	@echo "Clean complete"
 
-# Install using the installer script
-install: build
-	@echo "Running installer..."
-	@if [ -f "./install.sh" ]; then \
-		chmod +x install.sh && ./install.sh; \
-	else \
-		echo "Error: install.sh not found"; \
-		exit 1; \
-	fi
-
-# Uninstall using the uninstaller script
-uninstall:
-	@echo "Running uninstaller..."
-	@if [ -f "./uninstall.sh" ]; then \
-		chmod +x uninstall.sh && ./uninstall.sh; \
-	else \
-		echo "Error: uninstall.sh not found"; \
-		exit 1; \
-	fi
-
-# Check service status
-status:
-	@echo "Checking service status..."
-	@if [ -f "./status.sh" ]; then \
-		chmod +x status.sh && ./status.sh; \
-	else \
-		echo "Error: status.sh not found"; \
-		exit 1; \
-	fi
-
-# Show recent logs
-logs:
-	@echo "Showing recent logs..."
-	@if [ -f "./status.sh" ]; then \
-		chmod +x status.sh && ./status.sh --logs; \
-	else \
-		echo "Error: status.sh not found"; \
-		exit 1; \
-	fi
-
-# Reconfigure MQTT settings
-configure:
-	@echo "Running configuration wizard..."
-	@if [ -f "./configure.sh" ]; then \
-		chmod +x configure.sh && ./configure.sh; \
-	else \
-		echo "Error: configure.sh not found"; \
-		exit 1; \
-	fi
-
-# Test MQTT connection
-test:
-	@echo "Testing MQTT connection..."
-	@if [ -f "./mac2mqtt" ]; then \
-		timeout 10s ./mac2mqtt || echo "Test completed"; \
-	else \
-		echo "Error: mac2mqtt binary not found. Run 'make build' first."; \
-		exit 1; \
-	fi
-
-# Development target for quick testing
-dev: build
-	@echo "Running in development mode..."
-	./mac2mqtt
-
-# Package for distribution
-package: build
-	@echo "Creating distribution package..."
-	@mkdir -p dist
-	@cp mac2mqtt dist/
-	@cp mac2mqtt.yaml dist/
-	@cp com.hagak.mac2mqtt.plist dist/
-	@cp install.sh dist/
-	@cp uninstall.sh dist/
-	@cp configure.sh dist/
-	@cp status.sh dist/
-	@cp README.md dist/
-	@cp INSTALL.md dist/
-	@chmod +x dist/*.sh
-	@echo "Package created in dist/ directory"
-
-# Install dependencies
-deps:
-	@echo "Installing dependencies..."
-	go mod download
-	@echo "Dependencies installed!"
-
-# Format code
-fmt:
-	@echo "Formatting code..."
-	go fmt ./...
-	@echo "Code formatted!"
-
-# Run tests (if any)
-test-code:
+test: ## Run tests
 	@echo "Running tests..."
-	go test ./... || echo "No tests found or tests failed"
-	@echo "Tests completed!"
+	$(GOTEST) -v ./...
+	@echo "Tests complete"
 
-# Lint code
-lint:
-	@echo "Linting code..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-	fi 
+deps: ## Download dependencies
+	@echo "Downloading dependencies..."
+	$(GOMOD) download
+	@echo "Dependencies downloaded"
+
+install: ## Install Mac2MQTT
+	@echo "Installing Mac2MQTT..."
+	./install.sh
+
+uninstall: ## Uninstall Mac2MQTT
+	@echo "Uninstalling Mac2MQTT..."
+	./uninstall.sh
+
+status: ## Check Mac2MQTT status
+	@echo "Checking Mac2MQTT status..."
+	./status.sh
+
+debug: ## Run debug script
+	@echo "Running debug script..."
+	./debug.sh
+
+run: build ## Build and run locally
+	@echo "Running Mac2MQTT locally..."
+	./$(BINARY_NAME)
+
+release: build-all ## Build release packages
+	@echo "Creating release packages..."
+	@for arch in amd64 arm64; do \
+		target="darwin-$$arch"; \
+		echo "Creating package for $$target..."; \
+		tar -czf $(BINARY_NAME)-$$target.tar.gz \
+			$(BINARY_NAME)-$$target \
+			mac2mqtt.yaml \
+			com.hagak.mac2mqtt.plist \
+			install.sh \
+			status.sh \
+			debug.sh \
+			README.md \
+			INSTALL.md; \
+	done
+	@echo "Release packages created:"
+	@ls -la $(BINARY_NAME)-darwin-*.tar.gz
+
+format: ## Format Go code
+	@echo "Formatting Go code..."
+	$(GOCMD) fmt ./...
+	@echo "Formatting complete"
+
+vet: ## Run go vet
+	@echo "Running go vet..."
+	$(GOCMD) vet ./...
+	@echo "Vet complete"
+
+lint: format vet ## Run linting tools
+
+# Development helpers
+dev-setup: ## Set up development environment
+	@echo "Setting up development environment..."
+	$(GOMOD) download
+	$(GOMOD) tidy
+	@echo "Development setup complete"
+
+dev-test: ## Run tests with coverage
+	@echo "Running tests with coverage..."
+	$(GOTEST) -v -cover ./...
+	@echo "Test coverage complete"
+
+# GitHub Actions helpers
+gh-build: ## Build for GitHub Actions
+	@echo "Building for GitHub Actions..."
+	$(GOBUILD) -ldflags="-s -w" -o $(BINARY_NAME) mac2mqtt.go
+	chmod +x $(BINARY_NAME)
+	@echo "GitHub Actions build complete"
+
+gh-build-matrix: ## Build for GitHub Actions matrix
+	@echo "Building for architecture: $(GOARCH)"
+	$(GOBUILD) -ldflags="-s -w" -o $(BINARY_NAME)-darwin-$(GOARCH) mac2mqtt.go
+	chmod +x $(BINARY_NAME)-darwin-$(GOARCH)
+	@echo "Matrix build complete: $(BINARY_NAME)-darwin-$(GOARCH)" 

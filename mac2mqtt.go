@@ -1259,7 +1259,7 @@ func (app *Application) setDevice(client mqtt.Client) {
 		"p":             "button",
 		"name":          "Display Wake",
 		"unique_id":     app.hostname + "_displaywake",
-		"command_topic": app.getTopicPrefix() + "/command/displaywake",
+		"command_topic": app.getTopicPrefix() + "/command/set",
 		"payload_press": "displaywake",
 		"icon":          "mdi:monitor",
 	}
@@ -1268,7 +1268,7 @@ func (app *Application) setDevice(client mqtt.Client) {
 		"p":             "button",
 		"name":          "Display Sleep",
 		"unique_id":     app.hostname + "_displaysleep",
-		"command_topic": app.getTopicPrefix() + "/command/displaysleep",
+		"command_topic": app.getTopicPrefix() + "/command/set",
 		"payload_press": "displaysleep",
 		"icon":          "mdi:monitor-off",
 	}
@@ -1277,7 +1277,7 @@ func (app *Application) setDevice(client mqtt.Client) {
 		"p":             "button",
 		"name":          "Screensaver",
 		"unique_id":     app.hostname + "_screensaver",
-		"command_topic": app.getTopicPrefix() + "/command/screensaver",
+		"command_topic": app.getTopicPrefix() + "/command/set",
 		"payload_press": "screensaver",
 		"icon":          "mdi:monitor-star",
 	}
@@ -1286,7 +1286,7 @@ func (app *Application) setDevice(client mqtt.Client) {
 		"p":             "button",
 		"name":          "Sleep",
 		"unique_id":     app.hostname + "_sleep",
-		"command_topic": app.getTopicPrefix() + "/command/sleep",
+		"command_topic": app.getTopicPrefix() + "/command/set",
 		"payload_press": "sleep",
 		"icon":          "mdi:sleep",
 	}
@@ -1295,7 +1295,7 @@ func (app *Application) setDevice(client mqtt.Client) {
 		"p":                  "button",
 		"name":               "Shutdown",
 		"unique_id":          app.hostname + "_shutdown",
-		"command_topic":      app.getTopicPrefix() + "/command/shutdown",
+		"command_topic":      app.getTopicPrefix() + "/command/set",
 		"payload_press":      "shutdown",
 		"enabled_by_default": false,
 		"icon":               "mdi:power",

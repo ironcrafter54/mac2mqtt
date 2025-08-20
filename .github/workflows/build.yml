@@ -43,7 +43,7 @@ jobs:
         run: go build -o mac2mqtt mac2mqtt.go
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: mac2mqtt-test
           path: mac2mqtt

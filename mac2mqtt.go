@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -524,8 +525,29 @@ func getDisplays() []Display {
 	return displays
 }
 
+// isDisplayAvailable checks if a display is currently available
+func isDisplayAvailable(displayID string) bool {
+	// Get current display list to check if display is available
+	displays := getDisplays()
+	if displays == nil {
+		return false
+	}
+	
+	for _, display := range displays {
+		if display.DisplayID == displayID {
+			return true
+		}
+	}
+	return false
+}
+
 // getDisplayBrightness gets the current brightness for a specific display
 func getDisplayBrightness(displayID string) (int, error) {
+	// First check if display is available to avoid unnecessary errors
+	if !isDisplayAvailable(displayID) {
+		return 0, fmt.Errorf("display %s is not currently available", displayID)
+	}
+
 	out, err := exec.Command("betterdisplaycli", "get", "-displayID="+displayID, "-brightness", "-value").Output()
 	if err != nil {
 		return 0, fmt.Errorf("error getting brightness for display %s: %v", displayID, err)
@@ -747,10 +769,15 @@ func (app *Application) startMediaStream(client mqtt.Client) {
 		return
 	}
 
-	// Read the stream in a goroutine
+	// Read the stream in a goroutine with error recovery
 	go func() {
-		defer cmd.Wait()
-		defer stdout.Close()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Media stream goroutine recovered from panic: %v", r)
+			}
+			cmd.Wait()
+			stdout.Close()
+		}()
 
 		scanner := bufio.NewScanner(stdout)
 		// Increase buffer size to handle long JSON lines from media-control stream
@@ -770,12 +797,15 @@ func (app *Application) startMediaStream(client mqtt.Client) {
 				continue
 			}
 
-			// Process the media update
-			app.processMediaStreamUpdate(client, mediaData)
+			// Process the media update only if MQTT client is connected
+			if client.IsConnected() {
+				app.processMediaStreamUpdate(client, mediaData)
+			}
 		}
 
 		if err := scanner.Err(); err != nil {
 			log.Printf("Error reading media stream: %v", err)
+			log.Println("Media stream will restart on next application restart")
 		}
 	}()
 
@@ -915,9 +945,20 @@ func (app *Application) updateDisplayBrightness(client mqtt.Client) {
 		return
 	}
 
+	// Refresh display list to handle dynamic display changes (laptop open/close)
+	currentDisplays := getDisplays()
+	if currentDisplays != nil {
+		app.displays = currentDisplays
+	}
+
 	for _, display := range app.displays {
 		brightness, err := getDisplayBrightness(display.DisplayID)
 		if err != nil {
+			// Only log error once per minute to avoid spam for unavailable displays (e.g., closed laptop)
+			if display.Name == "Built-in Display" || strings.Contains(display.Name, "Built-in") {
+				// Silently skip built-in display when unavailable (laptop closed)
+				continue
+			}
 			log.Printf("Error getting brightness for display %s: %v", display.Name, err)
 			// Check if it's a BetterDisplay CLI error
 			if !isBetterDisplayCLIAvailable() {
@@ -939,25 +980,67 @@ func (app *Application) messagePubHandler(client mqtt.Client, msg mqtt.Message) 
 func (app *Application) connectHandler(client mqtt.Client) {
 	log.Println("Connected to MQTT")
 
+	// Set up device configuration (in case this is a reconnection)
+	app.setDevice(client)
+
 	token := client.Publish(app.getTopicPrefix()+"/status/alive", 0, true, "online")
 	token.Wait()
 
 	log.Println("Sending 'online' to topic: " + app.getTopicPrefix() + "/status/alive")
 	app.sub(client, app.getTopicPrefix()+"/command/#")
+
+	// Start media stream if not already running (for reconnections)
+	if isMediaControlAvailable() {
+		go app.startMediaStream(client)
+	}
+
+	// Send initial state updates
+	app.updateVolume(client)
+	app.updateMute(client)
+	app.updateCaffeinateStatus(client)
+	app.updateDisplayBrightness(client)
+	app.updateNowPlaying(client)
 }
 
 func (app *Application) connectLostHandler(client mqtt.Client, err error) {
 	log.Printf("Disconnected from MQTT: %v", err)
+	
+	// Check if it's a network issue
+	if !app.isNetworkReachable() {
+		log.Println("MQTT broker is not reachable - likely on a different network")
+		log.Println("Will retry connection when network becomes available")
+	} else {
+		log.Println("MQTT client will attempt to reconnect automatically...")
+	}
 }
 
 func (app *Application) getMQTTClient() error {
 	return app.getMQTTClientWithRetry(0)
 }
 
+// isNetworkReachable checks if the MQTT broker is reachable before attempting connection
+func (app *Application) isNetworkReachable() bool {
+	// Try to connect to the broker with a short timeout
+	timeout := 5 * time.Second
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(app.config.Ip, app.config.Port), timeout)
+	if err != nil {
+		log.Printf("Network check failed: MQTT broker %s:%s is not reachable (%v)", app.config.Ip, app.config.Port, err)
+		return false
+	}
+	conn.Close()
+	return true
+}
+
 func (app *Application) getMQTTClientWithRetry(retryCount int) error {
 	// Prevent infinite recursion
 	if retryCount > MaxRetryAttempts {
 		return fmt.Errorf("failed to connect to MQTT broker after multiple attempts")
+	}
+
+	// Check network reachability first to avoid long timeouts
+	if !app.isNetworkReachable() {
+		log.Printf("MQTT broker is not reachable on current network, will retry later")
+		return fmt.Errorf("MQTT broker not reachable")
 	}
 
 	opts := mqtt.NewClientOptions()
@@ -983,16 +1066,23 @@ func (app *Application) getMQTTClientWithRetry(retryCount int) error {
 	opts.OnConnectionLost = app.connectLostHandler
 	opts.SetDefaultPublishHandler(app.messagePubHandler)
 
-	// Set client ID to ensure unique identification
-	opts.SetClientID(app.hostname + "_mac2mqtt")
+	// Set client ID to ensure unique identification with timestamp to avoid conflicts
+	clientID := fmt.Sprintf("%s_mac2mqtt_%d", app.hostname, time.Now().Unix())
+	opts.SetClientID(clientID)
 
-	// Set connection parameters for better reliability
-	opts.SetConnectTimeout(30 * time.Second)
+	// Network-aware connection reliability settings
+	opts.SetClientID(app.hostname + "_mac2mqtt")
+	opts.SetKeepAlive(60 * time.Second)   // Send ping every 60 seconds
+	opts.SetPingTimeout(10 * time.Second) // Shorter ping timeout for faster network change detection
+	opts.SetConnectTimeout(15 * time.Second) // Shorter connect timeout for network switching
+	opts.SetAutoReconnect(true)           // Enable auto-reconnect
 	opts.SetConnectRetry(true)
-	opts.SetConnectRetryInterval(5 * time.Second)
-	opts.SetMaxReconnectInterval(1 * time.Minute)
-	opts.SetAutoReconnect(true)
-	opts.SetCleanSession(false)
+	opts.SetConnectRetryInterval(15 * time.Second) // Wait 15 seconds between retries (good for network switches)
+	opts.SetMaxReconnectInterval(2 * time.Minute) // Max 2 minutes between reconnect attempts (faster recovery)
+	opts.SetCleanSession(false)           // Resume session to avoid losing subscriptions
+	opts.SetOrderMatters(false)           // Allow out-of-order delivery for better performance
+	opts.SetWriteTimeout(10 * time.Second) // Shorter write timeout for network issues
+	opts.SetResumeSubs(true)              // Resume subscriptions on reconnect
 
 	// Set will message
 	opts.SetWill(app.getTopicPrefix()+"/status/alive", "offline", 0, true)
@@ -1415,6 +1505,15 @@ func (app *Application) setDevice(client mqtt.Client) {
 	// Note: Media player functionality replaced with play/pause button and now playing sensor
 }
 
+// handleOfflineMode manages application behavior when MQTT broker is unreachable
+func (app *Application) handleOfflineMode() {
+	log.Println("Operating in offline mode - MQTT broker not reachable")
+	log.Println("Application will continue monitoring system state and attempt to reconnect periodically")
+	
+	// Continue basic system monitoring even when offline
+	// This ensures the application doesn't crash and can recover when network returns
+}
+
 // Run starts the application and runs the main loop
 func (app *Application) Run() error {
 	log.Println("=== MAC2MQTT STARTING ===")
@@ -1451,43 +1550,112 @@ func (app *Application) Run() error {
 
 	log.Println("Starting MQTT connection...")
 	if err := app.getMQTTClient(); err != nil {
-		return fmt.Errorf("failed to connect to MQTT: %w", err)
+		log.Printf("Initial MQTT connection failed: %v", err)
+		if !app.isNetworkReachable() {
+			log.Println("MQTT broker not reachable - starting in offline mode")
+			app.handleOfflineMode()
+			// Continue running, the network check ticker will handle reconnection
+		} else {
+			return fmt.Errorf("failed to connect to MQTT: %w", err)
+		}
 	}
 
 	// Set up tickers for periodic updates
 	volumeTicker := time.NewTicker(UpdateInterval)
 	batteryTicker := time.NewTicker(UpdateInterval)
 	awakeTicker := time.NewTicker(UpdateInterval)
+	networkCheckTicker := time.NewTicker(30 * time.Second) // Check network every 30 seconds
 	defer volumeTicker.Stop()
 	defer batteryTicker.Stop()
 	defer awakeTicker.Stop()
+	defer networkCheckTicker.Stop()
 
-	// Initial setup
-	app.setDevice(app.client)
-	app.updateVolume(app.client)
-	app.updateMute(app.client)
-	app.updateCaffeinateStatus(app.client)
-	app.updateDisplayBrightness(app.client)
-	app.updateNowPlaying(app.client) // Initial now playing update
+	// Track connection state
+	lastConnectionState := app.client.IsConnected()
+	networkReachable := true
 
-	// Start media stream for real-time updates
-	app.startMediaStream(app.client)
+	// Initial setup - only if MQTT is connected
+	if app.client != nil && app.client.IsConnected() {
+		app.setDevice(app.client)
+		app.updateVolume(app.client)
+		app.updateMute(app.client)
+		app.updateCaffeinateStatus(app.client)
+		app.updateDisplayBrightness(app.client)
+		app.updateNowPlaying(app.client) // Initial now playing update
+
+		// Start media stream for real-time updates
+		app.startMediaStream(app.client)
+	} else {
+		log.Println("Skipping initial MQTT setup - will configure when connection is established")
+	}
 
 	// Main event loop
 	for {
 		select {
 		case <-volumeTicker.C:
-			app.updateVolume(app.client)
-			app.updateMute(app.client)
-			app.client.Publish(app.getTopicPrefix()+"/status/alive", 0, true, "true")
+			// Check if client is connected before publishing
+			if app.client.IsConnected() {
+				app.updateVolume(app.client)
+				app.updateMute(app.client)
+				app.client.Publish(app.getTopicPrefix()+"/status/alive", 0, true, "online")
+			} else if networkReachable {
+				log.Println("MQTT client not connected but network is reachable, connection may be recovering")
+			}
 
 		case <-batteryTicker.C:
-			app.updateBattery(app.client)
+			if app.client.IsConnected() {
+				app.updateBattery(app.client)
+			} else if networkReachable {
+				log.Println("MQTT client not connected but network is reachable, skipping battery update")
+			}
 
 		case <-awakeTicker.C:
-			app.updateCaffeinateStatus(app.client)
-			app.updateDisplayBrightness(app.client)
+			if app.client.IsConnected() {
+				app.updateCaffeinateStatus(app.client)
+				app.updateDisplayBrightness(app.client)
+			} else if networkReachable {
+				log.Println("MQTT client not connected but network is reachable, skipping status updates")
+			}
 			// Note: Media updates now come from the media-control stream
+
+		case <-networkCheckTicker.C:
+			// Periodic network reachability check
+			currentNetworkState := app.isNetworkReachable()
+			currentConnectionState := app.client.IsConnected()
+			
+			// Log network state changes
+			if currentNetworkState != networkReachable {
+				if currentNetworkState {
+					log.Println("Network connectivity restored - MQTT broker is now reachable")
+				} else {
+					log.Println("Network connectivity lost - MQTT broker is no longer reachable")
+				}
+				networkReachable = currentNetworkState
+			}
+			
+			// Log connection state changes
+			if currentConnectionState != lastConnectionState {
+				if currentConnectionState {
+					log.Println("MQTT connection restored")
+				} else {
+					log.Println("MQTT connection lost")
+				}
+				lastConnectionState = currentConnectionState
+			}
+			
+			// Handle network state changes
+			if currentNetworkState && !networkReachable {
+				// Network just became reachable - try to reconnect if not already connected
+				if !currentConnectionState {
+					log.Println("Attempting to reconnect to MQTT broker...")
+					// The auto-reconnect should handle this, but we can force a reconnection attempt
+					go func() {
+						if token := app.client.Connect(); token.Wait() && token.Error() != nil {
+							log.Printf("Reconnection attempt failed: %v", token.Error())
+						}
+					}()
+				}
+			}
 		}
 	}
 }

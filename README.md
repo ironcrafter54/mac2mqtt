@@ -1,10 +1,8 @@
 # Mac2MQTT (updated)
 
-FYI this project is not abandoned and is accepting pull requests, if you made this app better feel free to submit a PR and I'll merge it.
-
 `mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT.
 
-This repo is a fork of bessarabov/mac2mqtt -> ironcrafter54/mqtt -> hagak/mac2mqtt -> ironcrafter54/mqtt, that adds various QOL features for the mac
+This repo is a fork of bessarabov/mac2mqtt, that add MQTT Autodiscovery and a KeepAwake function for the mac.
 
 It publishes to MQTT:
 
@@ -110,6 +108,55 @@ If you prefer manual configuration, here's a sample:
 
 `configuration.yaml`:
 
+```yaml
+script:
+  air2_sleep:
+    icon: mdi:laptop
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "mac2mqtt/bessarabov-osx/command/sleep"
+          payload: "sleep"
+
+  air2_shutdown:
+    icon: mdi:laptop
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "mac2mqtt/bessarabov-osx/command/shutdown"
+          payload: "shutdown"
+
+  air2_displaysleep:
+    icon: mdi:laptop
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "mac2mqtt/bessarabov-osx/command/displaysleep"
+          payload: "displaysleep"
+
+mqtt:
+  sensor:
+    - name: air2_alive
+      icon: mdi:laptop
+      state_topic: "mac2mqtt/bessarabov-osx/status/alive"
+
+    - name: "air2_battery"
+      icon: mdi:battery-high
+      unit_of_measurement: "%"
+      state_topic: "mac2mqtt/bessarabov-osx/status/battery"
+
+  media_player:
+    - name: "air2_media_player"
+      icon: mdi:music
+      state_topic: "mac2mqtt/bessarabov-osx/status/media_player"
+      value_template: "{{ value_json.state }}"
+      json_attributes_topic: "mac2mqtt/bessarabov-osx/status/media_player"
+      json_attributes_template: "{{ {'title': value_json.title, 'artist': value_json.artist, 'album': value_json.album, 'app_name': value_json.app_name, 'duration': value_json.duration, 'position': value_json.position} | tojson }}"
+      availability_topic: "mac2mqtt/bessarabov-osx/status/alive"
+      payload_available: "online"
+      payload_not_available: "offline"
+```
+
 ## MQTT topics structure
 
 The program is working with several MQTT topics. All topics are prefixed with `mac2mqtt` + `COMPUTER_NAME`.
@@ -139,6 +186,56 @@ There can be `true` or `false` in this topic. `true` means that the computer vol
 The value ranges from 0 (inclusive) to 100 (inclusive) and represents the current level of the battery. Returns empty if there is no battery.
 
 The value of this topic is updated every 60 seconds.
+
+### PREFIX + `/status/media_player`
+
+Contains JSON with current media player information. Only available if Media Control is installed.
+
+Example:
+```json
+{
+  "state": "playing",
+  "title": "Song Title",
+  "artist": "Artist Name",
+  "album": "Album Name",
+  "app_name": "Spotify",
+  "duration": 180,
+  "position": 45,
+  "media_title": "Song Title",
+  "media_artist": "Artist Name",
+  "media_album": "Album Name"
+}
+```
+
+States: `playing`, `paused`, `idle`
+
+### PREFIX + `/status/media_state`
+
+The current state of media playback: `playing`, `paused`, or `idle`.
+
+### PREFIX + `/status/media_title`
+
+The title of the currently playing media.
+
+### PREFIX + `/status/media_artist`
+
+The artist of the currently playing media.
+
+### PREFIX + `/status/media_album`
+
+The album of the currently playing media.
+
+### PREFIX + `/status/media_app`
+
+The name of the application playing media (e.g., "Spotify", "Apple Music").
+
+### PREFIX + `/status/media_duration`
+
+The total duration of the media in seconds.
+
+### PREFIX + `/status/media_position`
+
+The current position in the media in seconds.
 
 ### PREFIX + `/command/volume`
 
@@ -184,6 +281,8 @@ make uninstall    # Uninstall mac2mqtt
 ./status.sh       # Check service status
 ./status.sh --logs      # Show recent logs
 ./status.sh --follow    # Follow logs in real-time
+./configure.sh    # Reconfigure settings
+./uninstall.sh    # Uninstall mac2mqtt
 ```
 
 ### Check Status
@@ -191,6 +290,12 @@ Shows if the service is running, configuration details, and dependency status.
 
 ### View Logs
 View recent logs or follow them in real-time.
+
+### Reconfigure Settings
+Allows you to change MQTT settings without reinstalling.
+
+### Uninstall
+Completely removes Mac2MQTT from your system.
 
 ## Building
 

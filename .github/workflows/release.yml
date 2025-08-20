@@ -91,8 +91,8 @@ jobs:
           go build -ldflags="-s -w" -o mac2mqtt-${{ matrix.target }} mac2mqtt.go
           chmod +x mac2mqtt-${{ matrix.target }}
 
-             - name: Create release archive
-         run: |
+      - name: Create release archive
+        run: |
            tar -czf mac2mqtt-${{ matrix.target }}.tar.gz \
              mac2mqtt-${{ matrix.target }} \
              mac2mqtt.yaml \

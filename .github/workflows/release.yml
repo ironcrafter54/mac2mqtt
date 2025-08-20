@@ -106,11 +106,10 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: mac2mqtt-${{ matrix.target }}
+          name: mac2mqtt-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             mac2mqtt-${{ matrix.target }}
             mac2mqtt-${{ matrix.target }}.tar.gz
-
   release:
     name: Create Release
     needs: [test, build]

@@ -2230,11 +2230,11 @@ func (app *Application) Run() error {
 	defer networkCheckTicker.Stop()
 
 	// Track connection state
-	lastConnectionState := app.client.IsConnected()
+	lastConnectionState := app.isClientConnected()
 	networkReachable := true
 
 	// Initial setup - only if MQTT is connected
-	if app.client != nil && app.client.IsConnected() {
+	if app.isClientConnected() {
 		app.setDevice(app.client)
 		app.updateVolume(app.client)
 		app.updateMute(app.client)
@@ -2263,7 +2263,7 @@ func (app *Application) Run() error {
 		select {
 		case <-volumeTicker.C:
 			// Check if client is connected before publishing
-			if app.client.IsConnected() {
+			if app.isClientConnected() {
 				app.updateVolume(app.client)
 				app.updateMute(app.client)
 				app.updateMediaDevices(app.client)
@@ -2273,7 +2273,7 @@ func (app *Application) Run() error {
 			}
 
 		case <-batteryTicker.C:
-			if app.client.IsConnected() {
+			if app.isClientConnected() {
 				app.updateBattery(app.client)
 				app.updateDiskUsage(app.client)
 				app.updateCPUUsage(app.client)
@@ -2285,7 +2285,7 @@ func (app *Application) Run() error {
 			}
 
 		case <-awakeTicker.C:
-			if app.client.IsConnected() {
+			if app.isClientConnected() {
 				app.updateCaffeinateStatus(app.client)
 				app.updateDisplayBrightness(app.client)
 			} else if networkReachable {
@@ -2296,7 +2296,7 @@ func (app *Application) Run() error {
 		case <-networkCheckTicker.C:
 			// Periodic network reachability check
 			currentNetworkState := app.isNetworkReachable()
-			currentConnectionState := app.client.IsConnected()
+			currentConnectionState := app.isClientConnected()
 
 			// Log network state changes
 			if currentNetworkState != networkReachable {
@@ -2325,6 +2325,9 @@ func (app *Application) Run() error {
 					log.Println("Attempting to reconnect to MQTT broker...")
 					// The auto-reconnect should handle this, but we can force a reconnection attempt
 					go func() {
+						if app.client == nil {
+							return
+						}
 						if token := app.client.Connect(); token.Wait() && token.Error() != nil {
 							log.Printf("Reconnection attempt failed: %v", token.Error())
 						}
@@ -2333,6 +2336,14 @@ func (app *Application) Run() error {
 			}
 		}
 	}
+}
+
+// isClientConnected reports whether the MQTT client exists and is connected.
+// During offline mode (broker unreachable at startup) app.client is nil, so
+// callers must use this instead of dereferencing app.client directly to avoid
+// a nil-pointer panic.
+func (app *Application) isClientConnected() bool {
+	return app.client != nil && app.client.IsConnected()
 }
 
 // Input validation functions

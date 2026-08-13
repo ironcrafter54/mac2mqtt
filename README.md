@@ -1,4 +1,10 @@
-# Mac2MQTT (updated)
+# Mac2MQTT (updated)(archived)
+
+<img width="908" height="147" alt="Screenshot 2026-08-13 at 16 20 07" src="https://github.com/user-attachments/assets/85c68260-2c3a-4298-accf-67f2a25917d9" />
+
+I had a lot of fun vibe coding this miserable peice of software, but I am not proud of what I have done, **this is not a good piece of software**
+
+If you are a developer that knows what they are doing please take this idea and make something that actually works well, it would be much appreciated, and I would be happy to link it here.
 
 `mac2mqtt` is a program that allows viewing and controlling some aspects of computers running macOS via MQTT.
 
